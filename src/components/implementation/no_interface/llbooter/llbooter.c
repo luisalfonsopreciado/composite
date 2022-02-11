@@ -17,6 +17,7 @@
 
 #include <init.h>
 #include <addr.h>
+#include <bt.h>
 
 #ifndef BOOTER_MAX_SINV
 #define BOOTER_MAX_SINV 256
@@ -77,6 +78,12 @@ static struct crt_comp *
 boot_comp_self(void)
 {
 	return boot_comp_get(cos_compid());
+}
+
+int
+bt_backtrace()
+{
+	printc("backtracing!");
 }
 
 static void

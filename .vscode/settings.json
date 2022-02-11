@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "cos_kernel_api.h": "c",
+        "llprint.h": "c",
+        "crt.h": "c",
+        "cos_component.h": "c"
+    }
+}
