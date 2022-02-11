@@ -17,6 +17,7 @@
 
 #include <init.h>
 #include <addr.h>
+#include <bt.h>
 
 #ifndef BOOTER_MAX_SINV
 #define BOOTER_MAX_SINV 256
