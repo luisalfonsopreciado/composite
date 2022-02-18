@@ -3,6 +3,6 @@
 
 #include <cos_component.h>
 
-int bt_backtrace();
+int bt_backtrace(compid_t);
 
 #endif /* BT_H */

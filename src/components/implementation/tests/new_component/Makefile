@@ -3,10 +3,10 @@
 #
 # The set of interfaces that this component exports for use by other
 # components. This is a list of the interface names.
-INTERFACE_EXPORTS =
+INTERFACE_EXPORTS = bt
 # The interfaces this component is dependent on for compilation (this
 # is a list of directory names in interface/)
-INTERFACE_DEPENDENCIES = init bt
+INTERFACE_DEPENDENCIES = init
 # The library dependencies this component is reliant on for
 # compilation/linking (this is a list of directory names in lib/)
 LIBRARY_DEPENDENCIES = component

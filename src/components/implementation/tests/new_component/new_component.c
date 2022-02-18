@@ -1,12 +1,14 @@
 #include <cos_component.h>
 #include <cos_kernel_api.h>
 #include <llprint.h>
-// #include <bt.h>
+#include <bt.h>
 
 void
 cos_init(void)
 {
-	printc("Hello world!\n");
+	printc("Hello world! %lu\n", cos_compid());
+
+	bt_backtrace(cos_compid());
 
 	struct cos_compinfo ci;
 	int i;

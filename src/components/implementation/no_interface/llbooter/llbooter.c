@@ -14,6 +14,8 @@
 #include <cos_defkernel_api.h>
 #include <crt.h>
 #include <static_slab.h>
+#include <libunwind.h>
+#include <libunwind-ptrace.h>
 
 #include <init.h>
 #include <addr.h>
@@ -45,13 +47,13 @@
  */
 
 static struct crt_comp boot_comps[MAX_NUM_COMPS];
-static const  compid_t sched_root_id  = 2;
-static        long     boot_id_offset = -1;
+static const compid_t  sched_root_id  = 2;
+static long            boot_id_offset = -1;
 
-SS_STATIC_SLAB(sinv,   struct crt_sinv,   BOOTER_MAX_SINV);
-SS_STATIC_SLAB(thd,    struct crt_thd,    BOOTER_MAX_INITTHD);
-SS_STATIC_SLAB(rcv,    struct crt_rcv,    BOOTER_MAX_SCHED);
-SS_STATIC_SLAB(chkpt,  struct crt_chkpt,  BOOTER_MAX_CHKPT);
+SS_STATIC_SLAB(sinv, struct crt_sinv, BOOTER_MAX_SINV);
+SS_STATIC_SLAB(thd, struct crt_thd, BOOTER_MAX_INITTHD);
+SS_STATIC_SLAB(rcv, struct crt_rcv, BOOTER_MAX_SCHED);
+SS_STATIC_SLAB(chkpt, struct crt_chkpt, BOOTER_MAX_CHKPT);
 
 /*
  * Assumptions: the component with the lowest id *must* be the one
@@ -64,9 +66,7 @@ boot_comp_get(compid_t id)
 {
 	assert(id > 0 && id <= MAX_NUM_COMPS);
 
-	if (boot_id_offset == -1) {
-		boot_id_offset = id;
-	}
+	if (boot_id_offset == -1) { boot_id_offset = id; }
 	/* casts are OK as we know that boot_id_offset is > 0 now */
 	assert((compid_t)boot_id_offset <= id);
 	assert(boot_id_offset >= 0 && id >= (compid_t)boot_id_offset);
@@ -81,9 +81,23 @@ boot_comp_self(void)
 }
 
 int
-bt_backtrace()
+bt_backtrace(compid_t id)
 {
-	printc("backtracing!");
+	struct crt_comp *c = boot_comp_get(id);
+
+	printc("backtracing!! %s %lu\n", c->name, id);
+	printc("%s\n", c->mem);
+
+	// printc("elf_hdr.etype: %p \n", c->elf_hdr);
+
+	unw_cursor_t cursor;
+	printc("cursor: %p \n", &cursor);
+	// unw_add	r_space_t addr_space = unw_create_addr_space(&_UPT_accessors, 0);
+
+	/* the unwind ptrace info */
+	void *upi = _UPT_create(id); 
+
+	return 1;
 }
 
 static void
@@ -95,10 +109,10 @@ boot_comp_set_idoffset(int off)
 static void
 comps_init(void)
 {
-	struct initargs comps, curr;
+	struct initargs      comps, curr;
 	struct initargs_iter i;
-	int cont, ret, j;
-	int comp_idx = 0;
+	int                  cont, ret, j;
+	int                  comp_idx = 0;
 
 	/*
 	 * Assume: our component id is the lowest of the ids for all
@@ -116,16 +130,16 @@ comps_init(void)
 	ret = args_get_entry("components", &comps);
 	assert(!ret);
 	printc("Components (%d):\n", args_len(&comps));
-	for (cont = args_iter(&comps, &i, &curr) ; cont ; cont = args_iter_next(&i, &curr)) {
+	for (cont = args_iter(&comps, &i, &curr); cont; cont = args_iter_next(&i, &curr)) {
 		struct crt_comp *comp;
-		void *elf_hdr;
-		int   keylen;
-		compid_t id = atoi(args_key(&curr, &keylen));
-		char *name  = args_get_from("img", &curr);
-		vaddr_t info = atol(args_get_from("info", &curr));
-		const char *root = "binaries/";
-		int   len  = strlen(root);
-		char  path[INITARGS_MAX_PATHNAME];
+		void            *elf_hdr;
+		int              keylen;
+		compid_t         id   = atoi(args_key(&curr, &keylen));
+		char            *name = args_get_from("img", &curr);
+		vaddr_t          info = atol(args_get_from("info", &curr));
+		const char      *root = "binaries/";
+		int              len  = strlen(root);
+		char             path[INITARGS_MAX_PATHNAME];
 
 		printc("%s: %lu\n", name, id);
 
@@ -151,9 +165,10 @@ comps_init(void)
 		} else {
 			assert(elf_hdr);
 			if (crt_comp_create(comp, name, id, elf_hdr, info)) {
-				printc("Error constructing the resource tables and image of component %s.\n", comp->name);
+				printc("Error constructing the resource tables and image of component %s.\n",
+				       comp->name);
 				BUG();
-			}	
+			}
 		}
 		assert(comp->refcnt != 0);
 	}
@@ -161,12 +176,12 @@ comps_init(void)
 	ret = args_get_entry("execute", &comps);
 	assert(!ret);
 	printc("Execution schedule:\n");
-	for (cont = args_iter(&comps, &i, &curr) ; cont ; cont = args_iter_next(&i, &curr)) {
-		struct crt_comp     *comp;
-		int      keylen;
-		compid_t id        = atoi(args_key(&curr, &keylen));
-		char    *exec_type = args_value(&curr);
-		struct crt_comp_exec_context ctxt = { 0 };
+	for (cont = args_iter(&comps, &i, &curr); cont; cont = args_iter_next(&i, &curr)) {
+		struct crt_comp             *comp;
+		int                          keylen;
+		compid_t                     id        = atoi(args_key(&curr, &keylen));
+		char                        *exec_type = args_value(&curr);
+		struct crt_comp_exec_context ctxt      = {0};
 
 		assert(exec_type);
 		assert(id != cos_compid());
@@ -203,23 +218,24 @@ comps_init(void)
 	 * for now, assume only one capmgr (allocating untyped memory
 	 * gets complex here otherwise)
 	 */
-	for (cont = args_iter(&comps, &i, &curr) ; cont ; cont = args_iter_next(&i, &curr)) {
-		struct crt_comp *c;
-		struct initargs curr_inner;
-		struct initargs_iter i_inner;
-		int keylen, cont2;
-		compid_t capmgr_id;
-		struct crt_comp_resources comp_res = { 0 };
-		crt_comp_alias_t alias_flags = 0;
-		struct crt_comp *target = NULL;
+	for (cont = args_iter(&comps, &i, &curr); cont; cont = args_iter_next(&i, &curr)) {
+		struct crt_comp          *c;
+		struct initargs           curr_inner;
+		struct initargs_iter      i_inner;
+		int                       keylen, cont2;
+		compid_t                  capmgr_id;
+		struct crt_comp_resources comp_res    = {0};
+		crt_comp_alias_t          alias_flags = 0;
+		struct crt_comp          *target      = NULL;
 
 		capmgr_id = atoi(args_key(&curr, &keylen));
-		c = boot_comp_get(capmgr_id);
+		c         = boot_comp_get(capmgr_id);
 		assert(c);
 
 		printc("\tCapmgr %ld:\n", capmgr_id);
 		/* This assumes that all capabilities for a given component are *contiguous* */
-		for (cont2 = args_iter(&curr, &i_inner, &curr_inner) ; cont2 ; cont2 = args_iter_next(&i_inner, &curr_inner)) {
+		for (cont2 = args_iter(&curr, &i_inner, &curr_inner); cont2;
+		     cont2 = args_iter_next(&i_inner, &curr_inner)) {
 			char    *type      = args_get_from("type", &curr_inner);
 			capid_t  capno     = atoi(args_key(&curr_inner, &keylen));
 			compid_t target_id = atoi(args_get_from("target", &curr_inner));
@@ -274,31 +290,32 @@ comps_init(void)
 	ret = args_get_entry("sinvs", &comps);
 	assert(!ret);
 	printc("Synchronous invocations (%d):\n", args_len(&comps));
-	for (cont = args_iter(&comps, &i, &curr) ; cont ; cont = args_iter_next(&i, &curr)) {
+	for (cont = args_iter(&comps, &i, &curr); cont; cont = args_iter_next(&i, &curr)) {
 		struct crt_sinv *sinv;
-		int serv_id = atoi(args_get_from("server", &curr));
-		int cli_id  = atoi(args_get_from("client", &curr));
-		struct crt_comp *serv = boot_comp_get(serv_id);
-		struct crt_comp *cli = boot_comp_get(cli_id);
+		int              serv_id = atoi(args_get_from("server", &curr));
+		int              cli_id  = atoi(args_get_from("client", &curr));
+		struct crt_comp *serv    = boot_comp_get(serv_id);
+		struct crt_comp *cli     = boot_comp_get(cli_id);
 
 		sinv = ss_sinv_alloc();
 		assert(sinv);
 		crt_sinv_create(sinv, args_get_from("name", &curr), boot_comp_get(serv_id), boot_comp_get(cli_id),
-				strtoul(args_get_from("c_fn_addr", &curr), NULL, 10), strtoul(args_get_from("c_ucap_addr", &curr), NULL, 10),
-				strtoul(args_get_from("s_fn_addr", &curr), NULL, 10));
+		                strtoul(args_get_from("c_fn_addr", &curr), NULL, 10),
+		                strtoul(args_get_from("c_ucap_addr", &curr), NULL, 10),
+		                strtoul(args_get_from("s_fn_addr", &curr), NULL, 10));
 		ss_sinv_activate(sinv);
-		printc("\t%s (%lu->%lu):\tclient_fn @ 0x%lx, client_ucap @ 0x%lx, server_fn @ 0x%lx\n",
-		       sinv->name, sinv->client->id, sinv->server->id, sinv->c_fn_addr, sinv->c_ucap_addr, sinv->s_fn_addr);
-	#ifdef ENABLE_CHKPT
+		printc("\t%s (%lu->%lu):\tclient_fn @ 0x%lx, client_ucap @ 0x%lx, server_fn @ 0x%lx\n", sinv->name,
+		       sinv->client->id, sinv->server->id, sinv->c_fn_addr, sinv->c_ucap_addr, sinv->s_fn_addr);
+#ifdef ENABLE_CHKPT
 		assert(serv->n_sinvs < CRT_COMP_SINVS_LEN);
 		serv->sinvs[serv->n_sinvs] = *sinv;
 		serv->n_sinvs++;
 		assert(cli->n_sinvs < CRT_COMP_SINVS_LEN);
 		cli->sinvs[cli->n_sinvs] = *sinv;
 		cli->n_sinvs++;
-	#endif /* ENABLE_CHKPT */
+#endif /* ENABLE_CHKPT */
 	}
-	
+
 	/*
 	 * Delegate the untyped memory to the capmgr. This should go
 	 * *after* all allocations that use untyped memory, so that we
@@ -309,10 +326,10 @@ comps_init(void)
 	 */
 	ret = args_get_entry("captbl_delegations", &comps);
 	assert(!ret);
-	for (cont = args_iter(&comps, &i, &curr) ; cont ; cont = args_iter_next(&i, &curr)) {
-		struct crt_comp *c;
-		int keylen;
-		struct crt_comp_exec_context ctxt = { 0 };
+	for (cont = args_iter(&comps, &i, &curr); cont; cont = args_iter_next(&i, &curr)) {
+		struct crt_comp             *c;
+		int                          keylen;
+		struct crt_comp_exec_context ctxt = {0};
 
 		c = boot_comp_get(atoi(args_key(&curr, &keylen)));
 		assert(c);
@@ -330,19 +347,19 @@ comps_init(void)
  * We only support a single checkpoint directly above the existing components.
  * At this point we assume capability managers and schedulers will not be checkpointed
  */
-void 
+void
 chkpt_comp_init(struct crt_comp *comp, struct crt_chkpt *chkpt, char *name)
 {
 #ifdef ENABLE_CHKPT
 	/* create the component */
-	void *elf_hdr;
-	int   keylen;
-	compid_t id;
-	const char *root = "binaries/";
-	int   len  = strlen(root);
-	char  path[INITARGS_MAX_PATHNAME];
-	struct crt_comp_exec_context ctxt = { 0 };
-	struct crt_thd *t;
+	void                        *elf_hdr;
+	int                          keylen;
+	compid_t                     id;
+	const char                  *root = "binaries/";
+	int                          len  = strlen(root);
+	char                         path[INITARGS_MAX_PATHNAME];
+	struct crt_comp_exec_context ctxt = {0};
+	struct crt_thd              *t;
 
 	id = crt_ncomp() + 1;
 	assert(id < MAX_NUM_COMPS && id > 0 && name);
@@ -373,28 +390,28 @@ chkpt_comp_init(struct crt_comp *comp, struct crt_chkpt *chkpt, char *name)
 	comp->init_state = CRT_COMP_INIT_COS_INIT;
 
 	/* create the sinvs */
-	for (u32_t i = 0 ; i < comp->n_sinvs ; i++) {
+	for (u32_t i = 0; i < comp->n_sinvs; i++) {
 		struct crt_sinv *sinv;
-		int serv_id = comp->sinvs[i].server->id;
-		int cli_id  = comp->sinvs[i].client->id;
+		int              serv_id = comp->sinvs[i].server->id;
+		int              cli_id  = comp->sinvs[i].client->id;
 
 		sinv = ss_sinv_alloc();
 		assert(sinv);
 		crt_sinv_create(sinv, comp->sinvs[i].name, comp->sinvs[i].server, comp->sinvs[i].client,
-			comp->sinvs[i].c_fn_addr, comp->sinvs[i].c_ucap_addr, comp->sinvs[i].s_fn_addr);
+		                comp->sinvs[i].c_fn_addr, comp->sinvs[i].c_ucap_addr, comp->sinvs[i].s_fn_addr);
 		ss_sinv_activate(sinv);
 		printc("\t(chkpt) sinv: %s (%lu->%lu):\tclient_fn @ 0x%lx, client_ucap @ 0x%lx, server_fn @ 0x%lx\n",
-			sinv->name, sinv->client->id, sinv->server->id, sinv->c_fn_addr, sinv->c_ucap_addr, sinv->s_fn_addr);	
+		       sinv->name, sinv->client->id, sinv->server->id, sinv->c_fn_addr, sinv->c_ucap_addr,
+		       sinv->s_fn_addr);
 	}
 #endif /* ENABLE_CHKPT */
-
 }
 
 unsigned long
 addr_get(compid_t id, addr_t type)
 {
-	compid_t client = (compid_t)cos_inv_token();
-	struct crt_comp *c, *target;
+	compid_t             client = (compid_t)cos_inv_token();
+	struct crt_comp     *c, *target;
 	struct cos_compinfo *ci;
 
 	c = boot_comp_get(client);
@@ -443,29 +460,25 @@ init_done_chkpt(struct crt_comp *c)
 	thdcap_t          thdcap;
 	int               ret;
 	char              name[INITARGS_MAX_PATHNAME];
-	char             *prefix = "chkpt_";
+	char	     *prefix    = "chkpt_";
 	int               prefix_sz = strlen("chkpt_");
 
 	if (c->id == cos_compid()) {
-	 	/* don't allow chkpnts of the booter */
-	 	BUG();
+		/* don't allow chkpnts of the booter */
+		BUG();
 	}
 
 	assert(INITARGS_MAX_PATHNAME > prefix_sz + strlen(c->name));
 	memcpy(name, prefix, prefix_sz + 1);
-	strncat(name, c->name, INITARGS_MAX_PATHNAME - prefix_sz - 1); 
+	strncat(name, c->name, INITARGS_MAX_PATHNAME - prefix_sz - 1);
 	c->name[INITARGS_MAX_PATHNAME - 1] = '\0';
-	
+
 	/* completed all initialization */
 	if (c->init_state >= CRT_COMP_INIT_MAIN) {
-		if (crt_nchkpt() > BOOTER_MAX_CHKPT) {
-			BUG();
-		}
+		if (crt_nchkpt() > BOOTER_MAX_CHKPT) { BUG(); }
 
 		chkpt = ss_chkpt_alloc();
-		if (crt_chkpt_create(chkpt, c) != 0) {
-			BUG();
-		}
+		if (crt_chkpt_create(chkpt, c) != 0) { BUG(); }
 
 		ss_chkpt_activate(chkpt);
 		chkpt_comp_init(new_comp, chkpt, name);
@@ -483,8 +496,8 @@ init_done_chkpt(struct crt_comp *c)
 void
 init_done(int parallel_init, init_main_t main_type)
 {
-	compid_t client = (compid_t)cos_inv_token();
-	struct crt_comp    *c;
+	compid_t         client = (compid_t)cos_inv_token();
+	struct crt_comp *c;
 
 	assert(client > 0 && client <= MAX_NUM_COMPS);
 	c = boot_comp_get(client);
@@ -495,14 +508,13 @@ init_done(int parallel_init, init_main_t main_type)
 	init_done_chkpt(c);
 #endif /* ENABLE_CHKPT */
 	return;
-
 }
 
 
 void
 init_exit(int retval)
 {
-	compid_t client = (compid_t)cos_inv_token();
+	compid_t         client = (compid_t)cos_inv_token();
 	struct crt_comp *c;
 
 	assert(client > 0 && client <= MAX_NUM_COMPS);
@@ -513,7 +525,8 @@ init_exit(int retval)
 
 	/* TODO: recycle back to a chkpt via chkpt_restore() */
 
-	while (1) ;
+	while (1)
+		;
 }
 
 void
