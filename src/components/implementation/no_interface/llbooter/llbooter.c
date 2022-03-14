@@ -85,19 +85,33 @@ bt_backtrace(compid_t id)
 {
 	struct crt_comp *c = boot_comp_get(id);
 
-	printc("backtracing!! %s %lu\n", c->name, id);
-	printc("%s\n", c->mem);
+	unw_addr_space_t as = unw_create_addr_space(&_UPT_accessors, 0);
+	void *context = _UPT_create(c->id);
 
-	// printc("elf_hdr.etype: %p \n", c->elf_hdr);
+	printc("_UPT_create %p\n", context);
 
 	unw_cursor_t cursor;
-	printc("cursor: %p \n", &cursor);
-	// unw_add	r_space_t addr_space = unw_create_addr_space(&_UPT_accessors, 0);
 
-	/* the unwind ptrace info */
-	void *upi = _UPT_create(id); 
+	// if (unw_init_remote(&cursor, as, context) != 0)
+	// 	printf("ERROR: cannot initialize cursor for remote unwinding\n");
 
-	return 1;
+	// do {
+	// 	unw_word_t offset, pc;
+	// 	char sym[4096];
+	// 	if (unw_get_reg(&cursor, UNW_REG_IP, &pc))
+	// 		printf("ERROR: cannot read program counter\n");
+
+	// 	printf("0x%lx: ", pc);
+
+	// 	if (unw_get_proc_name(&cursor, sym, sizeof(sym), &offset) == 0)
+	// 		printf("(%s+0x%lx)\n", sym, offset);
+	// 	else
+	// 		printf("-- no symbol name found\n");
+	// } while (unw_step(&cursor) > 0);
+
+	// _UPT_destroy(context);
+
+	return 0;
 }
 
 static void

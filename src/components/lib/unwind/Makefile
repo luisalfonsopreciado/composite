@@ -4,7 +4,7 @@
 # The library names associated with .a files output that are linked
 # (via, for example, -lunwind) into dependents. This list should be
 # "unwind" for output files such as libunwind.a.
-LIBRARY_OUTPUT = unwind
+LIBRARY_OUTPUT = unwind unwind-ptrace
 # The .o files that are mandatorily linked into dependents. This is
 # rarely used, and only when normal .a linking rules will avoid
 # linking some necessary objects. This list is of names (for example,
@@ -15,13 +15,13 @@ OBJECT_OUTPUT =
 # The path within this directory that holds the .h files for
 # dependents to compile with (./ by default). Will be fed into the -I
 # compiler arguments.
-INCLUDE_PATHS = .
+INCLUDE_PATHS = libunwind/include
 # The interfaces this component is dependent on for compilation (this
 # is a list of directory names in interface/)
 INTERFACE_DEPENDENCIES =
 # The library dependencies this component is reliant on for
 # compilation/linking (this is a list of directory names in lib/)
-LIBRARY_DEPENDENCIES = component
+LIBRARY_DEPENDENCIES = component crt posix
 # Note: Both the interface and library dependencies should be
 # *minimal*. That is to say that removing a dependency should cause
 # the build to fail. The build system does not validate this
@@ -40,7 +40,7 @@ LIBRARY_DEPENDENCIES = component
 # libraries written for composite. Get rid of this if you require a
 # custom Makefile (e.g. if you use an existing
 # (non-composite-specific) library. An example of this is `kernel`.
-include Makefile.lib
+# include Makefile.lib
 
 ## Type 2, external library: If you need to specialize the Makefile
 ## for an external library, you can add the external code as a
@@ -61,3 +61,36 @@ include Makefile.lib
 ## Default rules:
 # init: clean all
 # distclean: clean
+
+# Generate absolute paths
+mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+mkfile_dir := $(dir $(mkfile_path))
+
+UNWDIR=libunwind/
+UNWBIN=$(mkfile_dir)/libunwind/bin/
+UNWLIB=$(UNWBIN)lib/
+
+include Makefile.src Makefile.comp Makefile.dependencies
+
+.PHONY: all clean init distclean armv7a_init i386_init x86_64_init
+all:
+	$(info Building unwind library...)
+	make $(PLATFORM)_init
+	cp $(UNWLIB)*.a .
+
+clean:
+	make -C $(UNWDIR) distclean
+	rm -rf $(UNWBIN)
+	rm -rf *.a
+
+armv7a_init:
+	$(info Building libunwind for arm...)
+	cd $(UNWDIR); autoreconf -i; ./configure; make; make clean; make install prefix=$(UNWBIN); cd ..
+
+i386_init:
+	$(info Building libunwind for i386...)
+	cd $(UNWDIR); autoreconf -i; ./configure; make; make clean; make install prefix=$(UNWBIN); cd ..
+
+x86_64_init:
+	$(info Building libunwind for x86_64)
+	cd $(UNWDIR); autoreconf -i; ./configure; make; make clean; make install prefix=$(UNWBIN); cd ..
